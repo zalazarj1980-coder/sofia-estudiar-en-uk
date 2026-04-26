@@ -2,9 +2,10 @@
 # Generado por AgentKit — Estudiar en UK
 
 import os
+import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
@@ -54,11 +55,26 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+async def procesar_mensaje(telefono: str, texto: str, mensaje_id: str):
+    """Procesa el mensaje en segundo plano: genera respuesta y la envía."""
+    try:
+        logger.info(f"Procesando mensaje de {telefono}: {texto}")
+        historial = await obtener_historial(telefono)
+        respuesta = await generar_respuesta(texto, historial)
+        await guardar_mensaje(telefono, "user", texto)
+        await guardar_mensaje(telefono, "assistant", respuesta)
+        await proveedor.enviar_mensaje(telefono, respuesta)
+        logger.info(f"Respuesta enviada a {telefono}: {respuesta}")
+    except Exception as e:
+        logger.error(f"Error procesando mensaje de {telefono}: {e}")
+
+
 @app.post("/webhook")
-async def webhook_handler(request: Request):
+async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     """
     Recibe mensajes de WhatsApp via GHL.
-    Procesa el mensaje, genera respuesta con Claude y la envía de vuelta.
+    Responde 200 inmediatamente y procesa el mensaje en segundo plano
+    para no exceder el timeout del webhook de GHL.
     """
     try:
         mensajes = await proveedor.parsear_webhook(request)
@@ -66,23 +82,11 @@ async def webhook_handler(request: Request):
         for msg in mensajes:
             if msg.es_propio or not msg.texto:
                 continue
-
-            logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
-
-            # Obtener historial ANTES de guardar (evita duplicar el mensaje actual)
-            historial = await obtener_historial(msg.telefono)
-
-            respuesta = await generar_respuesta(msg.texto, historial)
-
-            await guardar_mensaje(msg.telefono, "user", msg.texto)
-            await guardar_mensaje(msg.telefono, "assistant", respuesta)
-
-            await proveedor.enviar_mensaje(msg.telefono, respuesta)
-
-            logger.info(f"Respuesta a {msg.telefono}: {respuesta}")
+            # Encolar en background — GHL recibe 200 de inmediato
+            background_tasks.add_task(procesar_mensaje, msg.telefono, msg.texto, msg.mensaje_id)
 
         return {"status": "ok"}
 
     except Exception as e:
-        logger.error(f"Error en webhook: {e}")
+        logger.error(f"Error parseando webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
