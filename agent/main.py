@@ -2,6 +2,8 @@
 # Generado por AgentKit — Estudiar en UK
 
 import os
+import re
+import json
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -28,6 +30,8 @@ _buffer_mensajes: dict[str, list[tuple[str, str]]] = {}
 # Timer por teléfono: telefono → asyncio.Task
 _buffer_timers: dict[str, asyncio.Task] = {}
 BUFFER_DELAY_SEGUNDOS = 7  # espera 7s para acumular mensajes del mismo usuario
+OWNER_WHATSAPP = os.getenv("OWNER_WHATSAPP", "+447596099207")
+_PATRON_BOOKING = re.compile(r'\[BOOKING:(\{[^}]+\})\]')
 
 
 @asynccontextmanager
@@ -59,6 +63,36 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) -> str:
+    """
+    Busca [BOOKING:{...}] en la respuesta, lo elimina del texto que ve el usuario
+    y envía una notificación de WhatsApp al dueño del negocio.
+    """
+    match = _PATRON_BOOKING.search(respuesta)
+    if not match:
+        return respuesta
+
+    try:
+        datos = json.loads(match.group(1))
+        nombre = datos.get("nombre", "N/D")
+        fecha = datos.get("fecha", "N/D")
+        hora = datos.get("hora", "N/D")
+
+        mensaje_notif = (
+            f"🔔 Nueva cita confirmada en WhatsApp\n"
+            f"• Nombre: {nombre}\n"
+            f"• Fecha: {fecha}\n"
+            f"• Hora: {hora}\n"
+            f"• WhatsApp cliente: {telefono_cliente}"
+        )
+        await proveedor.enviar_mensaje(OWNER_WHATSAPP, mensaje_notif)
+        logger.info(f"Notificación de booking enviada — {nombre} el {fecha} a las {hora}")
+    except Exception as e:
+        logger.error(f"Error enviando notificación de booking: {e}")
+
+    return _PATRON_BOOKING.sub("", respuesta).strip()
+
+
 async def _procesar_buffer(telefono: str):
     """Espera BUFFER_DELAY_SEGUNDOS y procesa todos los mensajes acumulados."""
     try:
@@ -83,6 +117,7 @@ async def _procesar_buffer(telefono: str):
         logger.info(f"Procesando mensaje de {telefono}: {texto_combinado[:100]}...")
         historial = await obtener_historial(telefono)
         respuesta = await generar_respuesta(texto_combinado, historial)
+        respuesta = await _extraer_y_notificar_booking(respuesta, telefono)
         await guardar_mensaje(telefono, "user", texto_combinado)
         await guardar_mensaje(telefono, "assistant", respuesta)
         await proveedor.enviar_mensaje(telefono, respuesta)
