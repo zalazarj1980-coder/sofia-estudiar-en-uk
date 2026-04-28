@@ -12,7 +12,10 @@ from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
+from agent.memory import (
+    inicializar_db, guardar_mensaje, obtener_historial,
+    pausar_conversacion, reanudar_conversacion, conversacion_esta_pausada
+)
 from agent.providers import obtener_proveedor
 
 load_dotenv()
@@ -32,6 +35,7 @@ _buffer_timers: dict[str, asyncio.Task] = {}
 BUFFER_DELAY_SEGUNDOS = 7  # espera 7s para acumular mensajes del mismo usuario
 OWNER_WHATSAPP = os.getenv("OWNER_WHATSAPP", "+447596099207")
 _PATRON_BOOKING = re.compile(r'\[BOOKING:(\{[^}]+\})\]')
+_PATRON_PAUSA = re.compile(r'\[PAUSA:(\w+)\]')
 
 
 @asynccontextmanager
@@ -93,6 +97,25 @@ async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) ->
     return _PATRON_BOOKING.sub("", respuesta).strip()
 
 
+async def _extraer_y_pausar(respuesta: str, telefono_cliente: str) -> str:
+    """
+    Busca [PAUSA:razón] en la respuesta, lo elimina del texto que ve el usuario
+    y pausa la conversación.
+    """
+    match = _PATRON_PAUSA.search(respuesta)
+    if not match:
+        return respuesta
+
+    try:
+        razon = match.group(1)
+        await pausar_conversacion(telefono_cliente, razon)
+        logger.info(f"Conversación pausada para {telefono_cliente} — razón: {razon}")
+    except Exception as e:
+        logger.error(f"Error pausando conversación: {e}")
+
+    return _PATRON_PAUSA.sub("", respuesta).strip()
+
+
 async def _procesar_buffer(telefono: str):
     """Espera BUFFER_DELAY_SEGUNDOS y procesa todos los mensajes acumulados."""
     try:
@@ -106,6 +129,11 @@ async def _procesar_buffer(telefono: str):
     if not mensajes_pendientes:
         return
 
+    # Si la conversación está pausada, reanudarla automáticamente
+    if await conversacion_esta_pausada(telefono):
+        logger.info(f"Reactivando conversación pausada para {telefono}")
+        await reanudar_conversacion(telefono)
+
     # Combinar todos los mensajes en uno si el usuario envió varios seguidos
     if len(mensajes_pendientes) == 1:
         texto_combinado = mensajes_pendientes[0][0]
@@ -118,6 +146,7 @@ async def _procesar_buffer(telefono: str):
         historial = await obtener_historial(telefono)
         respuesta = await generar_respuesta(texto_combinado, historial)
         respuesta = await _extraer_y_notificar_booking(respuesta, telefono)
+        respuesta = await _extraer_y_pausar(respuesta, telefono)
         await guardar_mensaje(telefono, "user", texto_combinado)
         await guardar_mensaje(telefono, "assistant", respuesta)
         await proveedor.enviar_mensaje(telefono, respuesta)

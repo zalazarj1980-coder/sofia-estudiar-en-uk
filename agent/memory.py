@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, select, Integer
+from sqlalchemy import String, Text, DateTime, select, Integer, delete
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,6 +30,15 @@ class Mensaje(Base):
     telefono: Mapped[str] = mapped_column(String(50), index=True)
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ConversacionPausada(Base):
+    __tablename__ = "conversaciones_pausadas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telefono: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    razon: Mapped[str] = mapped_column(String(100))
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -88,3 +97,29 @@ async def limpiar_historial(telefono: str):
         for msg in mensajes:
             session.delete(msg)
         await session.commit()
+
+
+async def pausar_conversacion(telefono: str, razon: str):
+    """Pausa una conversación. Sofia no responderá hasta que se reactive."""
+    async with async_session() as session:
+        pausa = ConversacionPausada(telefono=telefono, razon=razon)
+        session.add(pausa)
+        await session.commit()
+
+
+async def reanudar_conversacion(telefono: str):
+    """Reanuda una conversación pausada."""
+    async with async_session() as session:
+        await session.execute(
+            delete(ConversacionPausada).where(ConversacionPausada.telefono == telefono)
+        )
+        await session.commit()
+
+
+async def conversacion_esta_pausada(telefono: str) -> bool:
+    """Verifica si una conversación está pausada."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(ConversacionPausada).where(ConversacionPausada.telefono == telefono)
+        )
+        return result.scalars().first() is not None
