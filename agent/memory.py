@@ -52,7 +52,7 @@ async def guardar_mensaje(telefono: str, role: str, content: str):
         await session.commit()
 
 
-async def obtener_historial(telefono: str, limite: int = 20) -> list[dict]:
+async def obtener_historial(telefono: str, limite: int = 50) -> list[dict]:
     """
     Recupera los últimos N mensajes de una conversación.
 

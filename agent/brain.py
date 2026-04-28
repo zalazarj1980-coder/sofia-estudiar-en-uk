@@ -54,6 +54,21 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
     system_prompt = cargar_system_prompt()
 
+    # Inyectar instrucción según avance de la conversación
+    num_mensajes_usuario = sum(1 for m in historial if m["role"] == "user") + 1
+    if num_mensajes_usuario >= 15:
+        system_prompt += (
+            "\n\n⚠️ URGENTE: Ya llevan 15+ mensajes. DEBES mostrar ahora un resumen "
+            "del perfil con los datos recopilados (nombre si lo tienes, status migratorio, "
+            "área de interés) y dirigir directamente al calendario para agendar: "
+            "https://estudiarenuk.co.uk/agendamiento — No hagas más preguntas de precalificación."
+        )
+    elif num_mensajes_usuario >= 12:
+        system_prompt += (
+            "\n\n⚠️ IMPORTANTE: La conversación avanza. Intenta cerrar la "
+            "precalificación en los próximos 1-2 mensajes y ofrece el agendamiento."
+        )
+
     mensajes = []
     for msg in historial:
         mensajes.append({
