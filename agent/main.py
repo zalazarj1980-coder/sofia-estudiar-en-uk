@@ -94,17 +94,21 @@ async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) ->
         await proveedor.enviar_mensaje(OWNER_WHATSAPP, mensaje_notif)
         logger.info(f"Notificación de booking enviada — {nombre} el {fecha} a las {hora}")
 
-        # Actualizar custom field en GHL
-        valor_custom_field = f"{fecha} {hora} - {nombre}"
-        exito = await proveedor.actualizar_custom_field(
+        # Actualizar custom fields en GHL (dos campos para workflow)
+        exito_fecha = await proveedor.actualizar_custom_field(
             telefono_cliente,
-            "cita_confirmada_sofia",
-            valor_custom_field
+            "cita_fecha_sofia",
+            fecha
         )
-        if exito:
-            logger.info(f"Custom field 'cita_confirmada_sofia' actualizado en GHL para {telefono_cliente}")
+        exito_hora = await proveedor.actualizar_custom_field(
+            telefono_cliente,
+            "cita_hora_sofia",
+            hora
+        )
+        if exito_fecha and exito_hora:
+            logger.info(f"Custom fields actualizados en GHL para {telefono_cliente} — {fecha} {hora}")
         else:
-            logger.warning(f"No se pudo actualizar custom field en GHL para {telefono_cliente}")
+            logger.warning(f"No se pudieron actualizar custom fields en GHL para {telefono_cliente}")
 
     except Exception as e:
         logger.error(f"Error procesando booking: {e}")
