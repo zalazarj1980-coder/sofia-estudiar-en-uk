@@ -69,8 +69,9 @@ async def webhook_verificacion(request: Request):
 
 async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) -> str:
     """
-    Busca [BOOKING:{...}] en la respuesta, lo elimina del texto que ve el usuario
-    y envía una notificación de WhatsApp al dueño del negocio.
+    Busca [BOOKING:{...}] en la respuesta, lo elimina del texto que ve el usuario,
+    envía una notificación de WhatsApp al dueño del negocio,
+    y actualiza el custom field 'cita_confirmada_sofia' en GHL.
     """
     match = _PATRON_BOOKING.search(respuesta)
     if not match:
@@ -82,6 +83,7 @@ async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) ->
         fecha = datos.get("fecha", "N/D")
         hora = datos.get("hora", "N/D")
 
+        # Notificar al dueño
         mensaje_notif = (
             f"🔔 Nueva cita confirmada en WhatsApp\n"
             f"• Nombre: {nombre}\n"
@@ -91,8 +93,21 @@ async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) ->
         )
         await proveedor.enviar_mensaje(OWNER_WHATSAPP, mensaje_notif)
         logger.info(f"Notificación de booking enviada — {nombre} el {fecha} a las {hora}")
+
+        # Actualizar custom field en GHL
+        valor_custom_field = f"{fecha} {hora} - {nombre}"
+        exito = await proveedor.actualizar_custom_field(
+            telefono_cliente,
+            "cita_confirmada_sofia",
+            valor_custom_field
+        )
+        if exito:
+            logger.info(f"Custom field 'cita_confirmada_sofia' actualizado en GHL para {telefono_cliente}")
+        else:
+            logger.warning(f"No se pudo actualizar custom field en GHL para {telefono_cliente}")
+
     except Exception as e:
-        logger.error(f"Error enviando notificación de booking: {e}")
+        logger.error(f"Error procesando booking: {e}")
 
     return _PATRON_BOOKING.sub("", respuesta).strip()
 

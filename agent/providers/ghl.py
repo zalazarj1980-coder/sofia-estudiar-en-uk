@@ -218,6 +218,46 @@ class ProveedorGHL(ProveedorWhatsApp):
             logger.info(f"Mensaje enviado correctamente via GHL")
             return True
 
+    async def actualizar_custom_field(self, telefono: str, nombre_campo: str, valor: str) -> bool:
+        """
+        Actualiza un custom field de un contacto en GHL.
+        Usa el contact_id del cache si está disponible.
+        """
+        contact_id = self._contact_cache.get(telefono)
+
+        if not contact_id:
+            logger.warning(f"No hay contact_id en cache para {telefono} — no se puede actualizar custom field")
+            return False
+
+        if not self.api_key or not self.location_id:
+            logger.warning("GHL_API_KEY o GHL_LOCATION_ID no configurados")
+            return False
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                payload = {
+                    "customField": {
+                        nombre_campo: valor
+                    }
+                }
+
+                r = await client.patch(
+                    f"{GHL_API_BASE}/contacts/{contact_id}",
+                    headers=self._headers(),
+                    json=payload,
+                    params={"locationId": self.location_id},
+                )
+
+                if r.status_code not in (200, 204):
+                    logger.error(f"Error actualizando custom field en GHL: {r.status_code} — {r.text}")
+                    return False
+
+                logger.info(f"Custom field '{nombre_campo}' actualizado en GHL para {telefono}")
+                return True
+        except Exception as e:
+            logger.error(f"Excepción al actualizar custom field GHL: {e}")
+            return False
+
     def _normalizar_telefono(self, telefono: str) -> str:
         """Asegura formato E.164 con código de país UK por defecto."""
         telefono = telefono.strip().replace(" ", "").replace("-", "")
