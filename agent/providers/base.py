@@ -9,10 +9,11 @@ from fastapi import Request
 @dataclass
 class MensajeEntrante:
     """Mensaje normalizado — mismo formato sin importar el proveedor."""
-    telefono: str       # Número del remitente
-    texto: str          # Contenido del mensaje
-    mensaje_id: str     # ID único del mensaje
-    es_propio: bool     # True si lo envió el agente (se ignora)
+    telefono: str           # Número del remitente
+    texto: str              # Contenido del mensaje
+    mensaje_id: str         # ID único del mensaje
+    es_propio: bool         # True si lo envió el agente (se ignora)
+    imagen_url: str | None = None  # URL de imagen adjunta (opcional)
 
 
 class ProveedorWhatsApp(ABC):

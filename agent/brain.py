@@ -2,8 +2,10 @@
 # Generado por AgentKit
 
 import os
+import base64
 import yaml
 import logging
+import httpx
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 
@@ -38,19 +40,50 @@ def obtener_mensaje_fallback() -> str:
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
+async def _descargar_imagen_base64(url: str) -> tuple[str, str] | None:
+    """
+    Descarga una imagen desde una URL y la retorna como (base64, media_type).
+    Retorna None si falla la descarga.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as http:
+            r = await http.get(url)
+            if r.status_code != 200:
+                logger.warning(f"No se pudo descargar imagen ({r.status_code}): {url[:80]}")
+                return None
+            content_type = r.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+            # Normalizar a tipos que acepta Claude
+            tipos_validos = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+            if content_type not in tipos_validos:
+                content_type = "image/jpeg"
+            datos_b64 = base64.standard_b64encode(r.content).decode("utf-8")
+            return datos_b64, content_type
+    except Exception as e:
+        logger.error(f"Error descargando imagen: {e}")
+        return None
+
+
+async def generar_respuesta(
+    mensaje: str,
+    historial: list[dict],
+    imagen_url: str | None = None,
+) -> str:
     """
     Genera una respuesta usando Claude API.
 
     Args:
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
+        imagen_url: URL de imagen adjunta enviada por el usuario (opcional)
 
     Returns:
         La respuesta generada por Claude
     """
+    tiene_imagen = bool(imagen_url)
     if not mensaje or len(mensaje.strip()) < 2:
-        return obtener_mensaje_fallback()
+        if not tiene_imagen:
+            return obtener_mensaje_fallback()
+        mensaje = ""  # Imagen sin caption — Claude analizará solo la imagen
 
     system_prompt = cargar_system_prompt()
 
@@ -76,9 +109,35 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
             "content": msg["content"]
         })
 
+    # Construir el contenido del mensaje del usuario
+    if tiene_imagen:
+        imagen_data = await _descargar_imagen_base64(imagen_url)
+        if imagen_data:
+            datos_b64, media_type = imagen_data
+            content_usuario: list | str = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": datos_b64,
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": mensaje if mensaje else "El cliente envió esta imagen.",
+                },
+            ]
+            logger.info(f"Imagen incluida en el mensaje ({media_type})")
+        else:
+            # Si no se pudo descargar, procesar como texto normal con aviso
+            content_usuario = mensaje or "[El cliente intentó enviar una imagen pero no se pudo procesar]"
+    else:
+        content_usuario = mensaje
+
     mensajes.append({
         "role": "user",
-        "content": mensaje
+        "content": content_usuario,
     })
 
     try:

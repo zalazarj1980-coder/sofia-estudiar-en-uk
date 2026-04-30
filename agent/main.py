@@ -28,8 +28,8 @@ logger = logging.getLogger("agentkit")
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
-# Buffer por teléfono: telefono → lista de (texto, mensaje_id)
-_buffer_mensajes: dict[str, list[tuple[str, str]]] = {}
+# Buffer por teléfono: telefono → lista de (texto, mensaje_id, imagen_url)
+_buffer_mensajes: dict[str, list[tuple[str, str, str | None]]] = {}
 # Timer por teléfono: telefono → asyncio.Task
 _buffer_timers: dict[str, asyncio.Task] = {}
 BUFFER_DELAY_SEGUNDOS = 7  # espera 7s para acumular mensajes del mismo usuario
@@ -154,19 +154,21 @@ async def _procesar_buffer(telefono: str):
         await reanudar_conversacion(telefono)
 
     # Combinar todos los mensajes en uno si el usuario envió varios seguidos
+    # La primera imagen encontrada se usa para el análisis visual
+    imagen_url = next((img for _, _, img in mensajes_pendientes if img), None)
     if len(mensajes_pendientes) == 1:
         texto_combinado = mensajes_pendientes[0][0]
     else:
-        texto_combinado = "\n".join(texto for texto, _ in mensajes_pendientes)
+        texto_combinado = "\n".join(texto for texto, _, _ in mensajes_pendientes if texto)
         logger.info(f"Combinando {len(mensajes_pendientes)} mensajes de {telefono}")
 
     try:
-        logger.info(f"Procesando mensaje de {telefono}: {texto_combinado[:100]}...")
+        logger.info(f"Procesando mensaje de {telefono}: {texto_combinado[:100] or '[imagen]'}...")
         historial = await obtener_historial(telefono)
-        respuesta = await generar_respuesta(texto_combinado, historial)
+        respuesta = await generar_respuesta(texto_combinado, historial, imagen_url=imagen_url)
         respuesta = await _extraer_y_notificar_booking(respuesta, telefono)
         respuesta = await _extraer_y_pausar(respuesta, telefono)
-        await guardar_mensaje(telefono, "user", texto_combinado)
+        await guardar_mensaje(telefono, "user", texto_combinado or "[imagen]")
         await guardar_mensaje(telefono, "assistant", respuesta)
         await proveedor.enviar_mensaje(telefono, respuesta)
         logger.info(f"Respuesta enviada a {telefono}")
@@ -174,11 +176,11 @@ async def _procesar_buffer(telefono: str):
         logger.error(f"Error procesando mensaje de {telefono}: {e}")
 
 
-async def _encolar_mensaje(telefono: str, texto: str, mensaje_id: str):
+async def _encolar_mensaje(telefono: str, texto: str, mensaje_id: str, imagen_url: str | None = None):
     """Agrega mensaje al buffer y reinicia el timer de 7 segundos."""
     if telefono not in _buffer_mensajes:
         _buffer_mensajes[telefono] = []
-    _buffer_mensajes[telefono].append((texto, mensaje_id))
+    _buffer_mensajes[telefono].append((texto, mensaje_id, imagen_url))
 
     # Cancelar timer existente y crear uno nuevo
     timer_actual = _buffer_timers.get(telefono)
@@ -200,9 +202,9 @@ async def webhook_handler(request: Request):
         mensajes = await proveedor.parsear_webhook(request)
 
         for msg in mensajes:
-            if msg.es_propio or not msg.texto:
+            if msg.es_propio or (not msg.texto and not msg.imagen_url):
                 continue
-            await _encolar_mensaje(msg.telefono, msg.texto, msg.mensaje_id)
+            await _encolar_mensaje(msg.telefono, msg.texto, msg.mensaje_id, msg.imagen_url)
 
         return {"status": "ok"}
 

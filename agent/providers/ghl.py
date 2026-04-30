@@ -70,6 +70,11 @@ class ProveedorGHL(ProveedorWhatsApp):
         else:
             texto = self._extraer_texto(mensaje_obj)
 
+        # Detectar imagen adjunta en el mensaje
+        imagen_url = self._extraer_imagen_url(mensaje_obj, body)
+        if imagen_url:
+            logger.info(f"Imagen detectada en mensaje: {imagen_url[:80]}...")
+
         # El teléfono viene en body["phone"]
         telefono_raw = body.get("phone") or body.get("contactPhone") or ""
         telefono = self._extraer_telefono(telefono_raw)
@@ -81,16 +86,17 @@ class ProveedorGHL(ProveedorWhatsApp):
             self._contact_cache[telefono] = contact_id
             logger.info(f"Contact ID cacheado: {telefono} → {contact_id}")
 
-        if not texto or not telefono:
-            logger.debug(f"Webhook GHL sin texto o teléfono: texto='{texto}' phone='{telefono_raw}'")
+        if not telefono or (not texto and not imagen_url):
+            logger.debug(f"Webhook GHL sin contenido: texto='{texto}' imagen={imagen_url} phone='{telefono_raw}'")
             return []
 
-        logger.info(f"Mensaje de {telefono}: {texto}")
+        logger.info(f"Mensaje de {telefono}: {texto or '[imagen]'}")
         return [MensajeEntrante(
             telefono=telefono,
             texto=texto,
             mensaje_id=mensaje_id,
             es_propio=False,
+            imagen_url=imagen_url,
         )]
 
     async def enviar_mensaje(self, telefono: str, mensaje: str) -> bool:
@@ -257,6 +263,41 @@ class ProveedorGHL(ProveedorWhatsApp):
         except Exception as e:
             logger.error(f"Excepción al actualizar custom field GHL: {e}")
             return False
+
+    def _extraer_imagen_url(self, mensaje_obj: dict, body: dict) -> str | None:
+        """
+        Detecta si el mensaje contiene una imagen y retorna su URL.
+        GHL puede enviar imágenes con distintos formatos según la versión.
+        """
+        if isinstance(mensaje_obj, dict):
+            tipo = mensaje_obj.get("type")
+            # Tipos de imagen de WhatsApp via GHL (numérico o string)
+            es_imagen = tipo in (2, "image", "IMAGE") or str(tipo).lower() in ("image",)
+            if es_imagen:
+                url = (
+                    mensaje_obj.get("url") or
+                    mensaje_obj.get("mediaUrl") or
+                    mensaje_obj.get("fileUrl")
+                )
+                if url:
+                    return url
+            # A veces el body mismo es la URL de la imagen
+            cuerpo = mensaje_obj.get("body", "")
+            if isinstance(cuerpo, str) and cuerpo.startswith("http"):
+                ext = cuerpo.lower().split("?")[0]
+                if any(ext.endswith(e) for e in (".jpg", ".jpeg", ".png", ".gif", ".webp")):
+                    return cuerpo
+
+        # GHL también puede enviar attachments al nivel raíz
+        attachments = body.get("attachments", [])
+        if attachments:
+            first = attachments[0]
+            if isinstance(first, str):
+                return first
+            if isinstance(first, dict):
+                return first.get("url") or first.get("mediaUrl")
+
+        return None
 
     def _normalizar_telefono(self, telefono: str) -> str:
         """Asegura formato E.164 con código de país UK por defecto."""
