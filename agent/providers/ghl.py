@@ -241,24 +241,28 @@ class ProveedorGHL(ProveedorWhatsApp):
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
+                # GHL API v2 requiere el formato customFields (plural, array)
                 payload = {
-                    "customField": {
-                        nombre_campo: valor
-                    }
+                    "customFields": [
+                        {
+                            "key": nombre_campo,
+                            "field_value": valor,
+                        }
+                    ]
                 }
 
-                r = await client.patch(
+                r = await client.put(
                     f"{GHL_API_BASE}/contacts/{contact_id}",
                     headers=self._headers(),
                     json=payload,
-                    params={"locationId": self.location_id},
                 )
 
-                if r.status_code not in (200, 204):
+                if r.status_code not in (200, 201, 204):
                     logger.error(f"Error actualizando custom field en GHL: {r.status_code} — {r.text}")
+                    # Intentar con el formato alternativo por ID si el key falla
                     return False
 
-                logger.info(f"Custom field '{nombre_campo}' actualizado en GHL para {telefono}")
+                logger.info(f"Custom field '{nombre_campo}' = '{valor}' actualizado en GHL para {telefono}")
                 return True
         except Exception as e:
             logger.error(f"Excepción al actualizar custom field GHL: {e}")
