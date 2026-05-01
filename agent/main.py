@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
-    pausar_conversacion, reanudar_conversacion, conversacion_esta_pausada
+    pausar_conversacion, conversacion_esta_pausada
 )
 from agent.providers import obtener_proveedor
 
@@ -148,10 +148,10 @@ async def _procesar_buffer(telefono: str):
     if not mensajes_pendientes:
         return
 
-    # Si la conversación está pausada, reanudarla automáticamente
+    # Si la conversación está pausada, ignorar mensajes — solo se reactiva manualmente
     if await conversacion_esta_pausada(telefono):
-        logger.info(f"Reactivando conversación pausada para {telefono}")
-        await reanudar_conversacion(telefono)
+        logger.info(f"Conversación pausada para {telefono} — mensaje ignorado")
+        return
 
     # Combinar todos los mensajes en uno si el usuario envió varios seguidos
     # La primera imagen encontrada se usa para el análisis visual
