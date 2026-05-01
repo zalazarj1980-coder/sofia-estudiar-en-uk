@@ -97,12 +97,12 @@ async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) ->
         # Actualizar custom fields en GHL (dos campos para workflow)
         exito_fecha = await proveedor.actualizar_custom_field(
             telefono_cliente,
-            "cita_fecha_sofia",
+            "contact.cita_fecha_sofia",
             fecha
         )
         exito_hora = await proveedor.actualizar_custom_field(
             telefono_cliente,
-            "cita_hora_sofia",
+            "contact.cita_hora_sofia",
             hora
         )
         if exito_fecha and exito_hora:
