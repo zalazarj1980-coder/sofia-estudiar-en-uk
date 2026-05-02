@@ -320,17 +320,15 @@ class ProveedorGHL(ProveedorWhatsApp):
                 if r.status_code == 200:
                     data = r.json().get("contact", {})
                     custom_fields = data.get("customFields", [])
-                    logger.debug(f"obtener_custom_field: buscando '{field_key}' en {len(custom_fields)} custom fields")
-                    # GHL retorna customFields como lista de {key, field_value} o {key, value}
+                    logger.info(f"GHL_DEBUG obtener_custom_field: buscando '{field_key}' en {len(custom_fields)} campos")
                     for cf in custom_fields:
                         cf_key = cf.get("key", "")
-                        logger.debug(f"  - cf.key = '{cf_key}', campos: {list(cf.keys())}")
-                        # Probar ambas claves posibles
+                        cf_val = cf.get("field_value") or cf.get("value") or ""
+                        logger.info(f"GHL_DEBUG cf: key='{cf_key}' val='{cf_val}' raw={cf}")
                         if cf_key == field_key or cf_key == f"contact.{field_key}":
-                            valor = cf.get("field_value") or cf.get("value") or ""
-                            logger.info(f"obtener_custom_field: encontrado '{field_key}' = '{valor}'")
-                            return str(valor)
-                    logger.debug(f"obtener_custom_field: '{field_key}' no encontrado en custom fields")
+                            logger.info(f"GHL_DEBUG encontrado '{field_key}' = '{cf_val}'")
+                            return str(cf_val)
+                    logger.info(f"GHL_DEBUG '{field_key}' no encontrado")
                 else:
                     logger.error(f"obtener_custom_field: status {r.status_code} — {r.text[:200]}")
         except Exception as e:
