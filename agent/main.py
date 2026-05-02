@@ -84,12 +84,16 @@ async def _detectar_agente(contact_id: str) -> tuple[str, dict | None]:
     Retorna: ("jose", oferta_dict) o ("sofia", None)
     """
     if not contact_id:
+        logger.info("DEBUG _detectar_agente: contact_id vacío → Sofia")
         return "sofia", None
 
     # Usar cache para evitar llamadas repetidas a GHL API
     fase = _cache_fase_jose.get(contact_id)
+    logger.info(f"DEBUG _detectar_agente: contact_id={contact_id}, fase_cache='{fase}'")
+
     if not fase:
         fase = await proveedor.obtener_custom_field(contact_id, "jose_fase")
+        logger.info(f"DEBUG _detectar_agente: fase_ghl='{fase}'")
         if fase:
             _cache_fase_jose[contact_id] = fase
 
@@ -100,8 +104,10 @@ async def _detectar_agente(contact_id: str) -> tuple[str, dict | None]:
             email = await proveedor.obtener_ultimo_email(contact_id)
             oferta = parsear_email_para_jose(email) if email else {}
             _cache_oferta[contact_id] = oferta
+        logger.info(f"DEBUG _detectar_agente: → JOSÉ (fase={fase})")
         return "jose", oferta
 
+    logger.info(f"DEBUG _detectar_agente: → SOFÍA (fase='{fase}')")
     return "sofia", None
 
 
