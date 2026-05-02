@@ -303,6 +303,70 @@ class ProveedorGHL(ProveedorWhatsApp):
 
         return None
 
+    async def obtener_custom_field(self, contact_id: str, field_key: str) -> str:
+        """
+        Obtiene el valor de un custom field de un contacto en GHL.
+        Retorna el valor como string, o cadena vacía si no existe.
+        """
+        if not self.api_key or not contact_id:
+            return ""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{GHL_API_BASE}/contacts/{contact_id}",
+                    headers=self._headers(),
+                )
+                if r.status_code == 200:
+                    data = r.json().get("contact", {})
+                    # GHL retorna customFields como lista de {key, value}
+                    for cf in data.get("customFields", []):
+                        if cf.get("key") == field_key or cf.get("key") == f"contact.{field_key}":
+                            return str(cf.get("value") or "")
+        except Exception as e:
+            logger.error(f"Error obteniendo custom field '{field_key}': {e}")
+        return ""
+
+    async def obtener_ultimo_email(self, contact_id: str) -> dict | None:
+        """
+        Obtiene el último email enviado a un contacto desde GHL.
+        Retorna: {"asunto": "...", "cuerpo": "...", "fecha": "...", "remitente": "..."}
+        """
+        if not self.api_key or not self.location_id:
+            logger.warning("GHL_API_KEY o GHL_LOCATION_ID no configurados")
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # GHL API para obtener timeline/actividad del contact
+                # Busca emails enviados en los últimos días
+                r = await client.get(
+                    f"{GHL_API_BASE}/contacts/{contact_id}/emails",
+                    headers=self._headers(),
+                    params={"locationId": self.location_id, "limit": 5},  # Últimos 5 emails
+                )
+
+                if r.status_code == 200:
+                    data = r.json()
+                    emails = data.get("emails") or data.get("data") or []
+
+                    if emails:
+                        # Retornar el más reciente
+                        ultimo = emails[0]
+                        return {
+                            "asunto": ultimo.get("subject") or ultimo.get("title") or "",
+                            "cuerpo": ultimo.get("body") or ultimo.get("content") or "",
+                            "fecha": ultimo.get("createdAt") or ultimo.get("date") or "",
+                            "remitente": ultimo.get("from") or "agente@estudiarenuk.com",
+                            "id": ultimo.get("id") or "",
+                        }
+                else:
+                    logger.warning(f"Error obteniendo emails GHL: {r.status_code} — {r.text}")
+                    return None
+
+        except Exception as e:
+            logger.error(f"Excepción al obtener emails de GHL: {e}")
+            return None
+
     def _normalizar_telefono(self, telefono: str) -> str:
         """Asegura formato E.164 con código de país UK por defecto."""
         telefono = telefono.strip().replace(" ", "").replace("-", "")
