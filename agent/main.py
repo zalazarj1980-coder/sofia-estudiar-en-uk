@@ -78,6 +78,75 @@ async def webhook_verificacion(request: Request):
     return {"status": "ok"}
 
 
+async def _detectar_y_guardar_idioma_preferido(texto: str, telefono: str, contact_id: str) -> str | None:
+    """
+    Detecta si el cliente está respondiendo a la pregunta de idioma en el primer mensaje.
+    Parsea la respuesta (número, nombre, o idioma custom) y guarda en GHL.
+    Retorna el idioma detectado o None si no está respondiendo al menú.
+    """
+    if not contact_id:
+        return None
+
+    # Obtener preferred_language del cache o GHL
+    idioma_guardado = await proveedor.obtener_custom_field(contact_id, "preferred_language")
+    if idioma_guardado:
+        return None  # Ya eligió idioma antes
+
+    # Si llegamos aquí, es el primer mensaje — parseamos la respuesta
+    texto_limpio = texto.strip().lower()
+
+    # Mapeo de opciones
+    opciones = {
+        "1": "español",
+        "es": "español",
+        "esp": "español",
+        "spanish": "español",
+        "español": "español",
+
+        "2": "other",
+        "other": "other",
+        "otro": "other",
+        "others": "other",
+
+        "3": "português",
+        "port": "português",
+        "portugu": "português",
+        "portuguese": "português",
+        "portugal": "português",
+
+        "4": "italiano",
+        "ita": "italiano",
+        "italian": "italiano",
+        "italia": "italiano",
+
+        "5": "deutsch",
+        "deu": "deutsch",
+        "german": "deutsch",
+        "alemania": "deutsch",
+        "allemand": "deutsch",
+    }
+
+    # Buscar coincidencia
+    idioma_detectado = None
+    for patron, idioma in opciones.items():
+        if patron in texto_limpio or texto_limpio.startswith(patron):
+            idioma_detectado = idioma
+            break
+
+    # Si elige "other", usa el texto como el idioma
+    if not idioma_detectado and texto_limpio not in ("1", "2", "3", "4", "5"):
+        # Aceptar cualquier idioma en "other"
+        idioma_detectado = texto.strip()  # Mantener formato original
+
+    if idioma_detectado:
+        # Guardar en GHL
+        await proveedor.actualizar_custom_field(telefono, "preferred_language", idioma_detectado)
+        logger.info(f"Idioma preferido guardado para {telefono}: {idioma_detectado}")
+        return idioma_detectado
+
+    return None
+
+
 async def _detectar_agente(contact_id: str) -> tuple[str, dict | None]:
     """
     Determina qué agente atiende basado en el custom field 'jose_fase' de GHL.
@@ -302,6 +371,15 @@ async def _procesar_buffer(telefono: str):
         # Obtener contact_id del cache del proveedor
         contact_id = proveedor._contact_cache.get(telefono, "")
 
+        # Si es Sofía, detectar y guardar preferencia de idioma en el primer mensaje
+        idioma_detectado = None
+        if contact_id:
+            idioma_detectado = await _detectar_y_guardar_idioma_preferido(texto_combinado, telefono, contact_id)
+            if idioma_detectado:
+                logger.info(f"Primera respuesta de idioma detectada: {idioma_detectado}")
+        else:
+            logger.debug("Contact_id no disponible en cache para detección de idioma")
+
         # Router: ¿José o Sofía?
         agente, oferta = await _detectar_agente(contact_id)
 
@@ -313,7 +391,13 @@ async def _procesar_buffer(telefono: str):
             cancelar_recordatorios(telefono)
         else:
             logger.info(f"Router → SOFÍA para {telefono}")
-            respuesta = await generar_respuesta(texto_combinado, historial, imagen_url=imagen_url)
+            # Pasar idioma recién detectado a Sofía
+            respuesta = await generar_respuesta(
+                texto_combinado,
+                historial,
+                imagen_url=imagen_url,
+                idioma_recien_detectado=idioma_detectado if idioma_detectado else None
+            )
             respuesta = await _extraer_y_notificar_booking(respuesta, telefono)
             respuesta = await _extraer_y_pausar(respuesta, telefono)
 

@@ -67,6 +67,7 @@ async def generar_respuesta(
     mensaje: str,
     historial: list[dict],
     imagen_url: str | None = None,
+    idioma_recien_detectado: str | None = None,
 ) -> str:
     """
     Genera una respuesta usando Claude API.
@@ -75,6 +76,7 @@ async def generar_respuesta(
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
         imagen_url: URL de imagen adjunta enviada por el usuario (opcional)
+        idioma_recien_detectado: Si acaba de detectarse un idioma (ej: "español"), se agrega al prompt
 
     Returns:
         La respuesta generada por Claude
@@ -86,6 +88,10 @@ async def generar_respuesta(
         mensaje = ""  # Imagen sin caption — Claude analizará solo la imagen
 
     system_prompt = cargar_system_prompt()
+
+    # Si acaba de detectarse un idioma, inyectar instrucción al prompt
+    if idioma_recien_detectado:
+        system_prompt += f"\n\n⚠️ IMPORTANTE: El cliente ACABA DE ELEGIR idioma '{idioma_recien_detectado}'. Responde su mensaje confirmando que hablarán en {idioma_recien_detectado}, y continúa en ÚNICAMENTE ese idioma."
 
     # Inyectar instrucción según avance de la conversación
     num_mensajes_usuario = sum(1 for m in historial if m["role"] == "user") + 1
