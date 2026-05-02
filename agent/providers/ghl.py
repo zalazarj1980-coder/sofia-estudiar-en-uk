@@ -309,6 +309,7 @@ class ProveedorGHL(ProveedorWhatsApp):
         Retorna el valor como string, o cadena vacía si no existe.
         """
         if not self.api_key or not contact_id:
+            logger.debug(f"obtener_custom_field: api_key o contact_id vacío")
             return ""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -318,10 +319,20 @@ class ProveedorGHL(ProveedorWhatsApp):
                 )
                 if r.status_code == 200:
                     data = r.json().get("contact", {})
-                    # GHL retorna customFields como lista de {key, value}
-                    for cf in data.get("customFields", []):
-                        if cf.get("key") == field_key or cf.get("key") == f"contact.{field_key}":
-                            return str(cf.get("value") or "")
+                    custom_fields = data.get("customFields", [])
+                    logger.debug(f"obtener_custom_field: buscando '{field_key}' en {len(custom_fields)} custom fields")
+                    # GHL retorna customFields como lista de {key, field_value} o {key, value}
+                    for cf in custom_fields:
+                        cf_key = cf.get("key", "")
+                        logger.debug(f"  - cf.key = '{cf_key}', campos: {list(cf.keys())}")
+                        # Probar ambas claves posibles
+                        if cf_key == field_key or cf_key == f"contact.{field_key}":
+                            valor = cf.get("field_value") or cf.get("value") or ""
+                            logger.info(f"obtener_custom_field: encontrado '{field_key}' = '{valor}'")
+                            return str(valor)
+                    logger.debug(f"obtener_custom_field: '{field_key}' no encontrado en custom fields")
+                else:
+                    logger.error(f"obtener_custom_field: status {r.status_code} — {r.text[:200]}")
         except Exception as e:
             logger.error(f"Error obteniendo custom field '{field_key}': {e}")
         return ""
