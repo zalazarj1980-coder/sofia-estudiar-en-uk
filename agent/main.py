@@ -191,6 +191,27 @@ async def _encolar_mensaje(telefono: str, texto: str, mensaje_id: str, imagen_ur
     logger.debug(f"Encolado para {telefono} — {len(_buffer_mensajes[telefono])} en buffer")
 
 
+def _extraer_telefono_desde_payload_ghl(body: dict) -> str:
+    """
+    Intenta extraer el teléfono del payload de GHL, probando múltiples nombres
+    de campo (GHL varía según el tipo de webhook).
+    """
+    contact = body.get("contact") if isinstance(body.get("contact"), dict) else {}
+    customer = body.get("customer") if isinstance(body.get("customer"), dict) else {}
+    custom_data = body.get("customData") if isinstance(body.get("customData"), dict) else {}
+
+    return (
+        body.get("phone")
+        or body.get("contactPhone")
+        or body.get("contact_phone")
+        or body.get("Phone")
+        or contact.get("phone")
+        or customer.get("phone")
+        or custom_data.get("phone")
+        or ""
+    )
+
+
 @app.post("/webhook/pausar-contacto")
 async def pausar_contacto(request: Request):
     """
@@ -199,14 +220,16 @@ async def pausar_contacto(request: Request):
     """
     try:
         body = await request.json()
-        telefono_raw = body.get("phone") or body.get("contactPhone") or ""
+        logger.info(f"PAUSA webhook payload completo: {body}")
+
+        telefono_raw = _extraer_telefono_desde_payload_ghl(body)
         if not telefono_raw:
-            logger.warning("pausar-contacto: no se recibió teléfono en payload")
-            return {"status": "error", "detail": "telefono requerido"}
+            logger.warning(f"pausar-contacto: no se recibió teléfono. Keys del payload: {list(body.keys())}")
+            return {"status": "error", "detail": "telefono requerido", "payload_keys": list(body.keys())}
 
         telefono = proveedor._normalizar_telefono(telefono_raw)
         await pausar_conversacion(telefono, "pausa_manual_ghl")
-        logger.info(f"Sofía PAUSADA manualmente vía GHL para {telefono}")
+        logger.info(f"Sofía PAUSADA manualmente vía GHL para {telefono} (raw: {telefono_raw})")
         return {"status": "ok", "telefono": telefono, "accion": "pausada"}
     except Exception as e:
         logger.error(f"Error pausando contacto: {e}")
@@ -221,14 +244,16 @@ async def reanudar_contacto(request: Request):
     """
     try:
         body = await request.json()
-        telefono_raw = body.get("phone") or body.get("contactPhone") or ""
+        logger.info(f"REANUDAR webhook payload completo: {body}")
+
+        telefono_raw = _extraer_telefono_desde_payload_ghl(body)
         if not telefono_raw:
-            logger.warning("reanudar-contacto: no se recibió teléfono en payload")
-            return {"status": "error", "detail": "telefono requerido"}
+            logger.warning(f"reanudar-contacto: no se recibió teléfono. Keys del payload: {list(body.keys())}")
+            return {"status": "error", "detail": "telefono requerido", "payload_keys": list(body.keys())}
 
         telefono = proveedor._normalizar_telefono(telefono_raw)
         await reanudar_conversacion(telefono)
-        logger.info(f"Sofía REANUDADA manualmente vía GHL para {telefono}")
+        logger.info(f"Sofía REANUDADA manualmente vía GHL para {telefono} (raw: {telefono_raw})")
         return {"status": "ok", "telefono": telefono, "accion": "reanudada"}
     except Exception as e:
         logger.error(f"Error reanudando contacto: {e}")
