@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
-    pausar_conversacion, conversacion_esta_pausada
+    pausar_conversacion, reanudar_conversacion, conversacion_esta_pausada
 )
 from agent.providers import obtener_proveedor
 
@@ -189,6 +189,50 @@ async def _encolar_mensaje(telefono: str, texto: str, mensaje_id: str, imagen_ur
 
     _buffer_timers[telefono] = asyncio.create_task(_procesar_buffer(telefono))
     logger.debug(f"Encolado para {telefono} — {len(_buffer_mensajes[telefono])} en buffer")
+
+
+@app.post("/webhook/pausar-contacto")
+async def pausar_contacto(request: Request):
+    """
+    GHL llama aquí cuando se agrega el tag 'agente_pausado' a un contacto.
+    Pausa la conversación: Sofía dejará de responder hasta que se reactive.
+    """
+    try:
+        body = await request.json()
+        telefono_raw = body.get("phone") or body.get("contactPhone") or ""
+        if not telefono_raw:
+            logger.warning("pausar-contacto: no se recibió teléfono en payload")
+            return {"status": "error", "detail": "telefono requerido"}
+
+        telefono = proveedor._normalizar_telefono(telefono_raw)
+        await pausar_conversacion(telefono, "pausa_manual_ghl")
+        logger.info(f"Sofía PAUSADA manualmente vía GHL para {telefono}")
+        return {"status": "ok", "telefono": telefono, "accion": "pausada"}
+    except Exception as e:
+        logger.error(f"Error pausando contacto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/webhook/reanudar-contacto")
+async def reanudar_contacto(request: Request):
+    """
+    GHL llama aquí cuando se quita el tag 'agente_pausado' de un contacto.
+    Reanuda la conversación: Sofía volverá a responder en el próximo mensaje.
+    """
+    try:
+        body = await request.json()
+        telefono_raw = body.get("phone") or body.get("contactPhone") or ""
+        if not telefono_raw:
+            logger.warning("reanudar-contacto: no se recibió teléfono en payload")
+            return {"status": "error", "detail": "telefono requerido"}
+
+        telefono = proveedor._normalizar_telefono(telefono_raw)
+        await reanudar_conversacion(telefono)
+        logger.info(f"Sofía REANUDADA manualmente vía GHL para {telefono}")
+        return {"status": "ok", "telefono": telefono, "accion": "reanudada"}
+    except Exception as e:
+        logger.error(f"Error reanudando contacto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/webhook")
