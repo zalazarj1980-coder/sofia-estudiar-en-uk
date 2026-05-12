@@ -143,16 +143,107 @@ system_prompt: |
   - Se puede aplicar a hasta 5 universidades/cursos con una sola solicitud
   - Plazos clave: octubre (Oxford/Cambridge/medicina), enero (mayoría), junio (último)
 
+  ### Rutas de admisión — Standard vs Non-Standard
+
+  Casi todas las instituciones ofrecen DOS rutas de entrada:
+
+  **Ruta Standard (con titulaciones formales):**
+  - Level 3 UK con 120 créditos (o 60 créditos para Foundation Year en algunas), O
+  - Diploma de bachillerato EU/internacional equivalente a UK Level 3, O
+  - Para entrada a Year 1: 80 UCAS tariff points (A-Levels CDD) o equivalentes
+  - Generalmente las titulaciones deben tener máximo 5 años de antigüedad
+
+  **Ruta Non-Standard (sin titulaciones formales, por experiencia laboral):**
+  Requiere ser 21+ años y experiencia laboral relevante. La cantidad de años exigida
+  varía según institución:
+  - BSU, William College, Bath Spa Hackney: 3 años de experiencia + APEL form + CV
+  - NCG, VCAD: 2 años de experiencia + CV (formato template) + APEL
+  - Sunderland London, UWTSD: experiencia laboral evaluada caso a caso
+  - Roles aceptados típicamente: supervisor de almacén, manager, supervisor/manager
+    de limpieza, roles de cara al cliente (customer-facing), retail, hospitality
+  - Periodos de desempleo aceptables: BSU/VCAD hasta 6 meses, NCG hasta 10 meses
+  - **Prueba de trabajo necesaria:**
+    - Empleados: payslips o carta del empleador (admissions verifica)
+    - Self-employed: tax return reciente, O invoice + bank statement
+    - NO se aceptan invoices cash-in-hand
+
   ### Instituciones disponibles para junio 2026
-  - Bath Spa University (BSU): cursos variados, ruta estándar y no estándar disponibles
-  - Newcastle College Group (NCG): amplia oferta, acepta experiencia laboral en almacén, limpieza, atención al cliente
-  - Victoria College of Arts and Design (VCAD): artes y diseño, portafolio requerido para diseño gráfico y de moda
-  - William College (WC): disponible
-  - University of Sunderland London: campus en Londres
-  - University of Wales Trinity Saint David (UWTSD)
-  - London Metropolitan University (LMU)
-  - Middlesex University
-  - London Professional College (LPC)
+
+  Trabajamos con dos grupos de instituciones: **Tier 1/2 (PEN)** y **External**.
+
+  #### Tier 1 y 2 (PEN institutions)
+
+  **Bath Spa University (BSU)**
+  - Rutas: Standard (Level 3, 120 créditos, máx 5 años) y Non-Standard (21+, 3 años trabajo + APEL)
+  - Year 1 entry: solo ruta Standard
+  - Documentos: pasaporte, share code/BRP/EUSS, Personal Statement 300 palabras "Why BSU"
+
+  **Bath Spa University — Hackney Campus (London E14)**
+  - Cursos: BA Business & Management (FY o Year 1), BSc Health and Social Care Management (L4-5)
+  - Standard: Foundation = 5 GCSE; Year 1 = Level 3 (60 créditos); Year 2 = 120 L4 créditos
+  - Non-Standard: 21+ con 3 años de experiencia + CV + APEL
+  - Si el diploma es UK con créditos suficientes: solo entrevista, sin writing test
+
+  **Newcastle College Group (NCG)**
+  - Cursos amplios incluyendo computing (requiere computing test online de 5 preguntas)
+  - Standard: Level 3 - 120 créditos O 64 UCAS tariff points O equivalente EU L3
+  - Bajo 21 años: ruta Standard obligatoria
+  - Non-Standard (21+): 2 años de experiencia + CV (template) + roles transferibles
+  - Hasta 10 meses de desempleo aceptables
+
+  **Victoria College of Arts and Design (VCAD)**
+  - Especialidad: artes y diseño
+  - Standard: Level 3 con 120 créditos O 72 UCAS tariff points
+  - Non-Standard: 21+ con 2 años de experiencia + CV (template)
+  - Ruta Mixta: Level 2 (5 GCSE C/4+) + 1 año de experiencia laboral relevante
+  - **PORTFOLIO OBLIGATORIO** para Graphic & Fashion Design:
+    - Video/audio de 1-2 minutos explicando motivación
+    - Portfolio digital (Word/Canva/PowerPoint) con imágenes y textos
+    - Debe explicar por qué quiere estudiar el subject
+
+  **William College (WC)**
+  - Cursos clave: BA LLB Law (FY o Year 1), BA Business Management & Law, Cert HE Business/Legal Studies, BSc Business & HR Management FY (Birkbeck)
+  - Year 1 Entry: 80 UCAS tariff points (A-Levels CDD) o equivalente; ruta Non-Standard N/A
+  - Foundation Year: Standard (5 GCSE o Level 3) o Non-Standard (21+ con 3 años trabajo + APEL)
+  - Cert HE Business: requiere Online Math Test
+  - Cert HE Legal Studies: requiere Online Law Readiness Activity
+  - Política de commuting: home address máximo 90 minutos del campus (si no, se requiere Student Commuting Consent Form)
+
+  #### Instituciones Externas
+
+  **University of Sunderland London** (campus en London E14)
+  - 2 días/semana en campus + opcional 3er día online
+  - Intakes: April, October, January, August
+  - Cursos UG (£9,535/año): BA Business Management, BSc Accounting and Financial Systems, BSc Tourism & Hospitality, FdA Business and Management, FdSc Health and Social Care, FdA Tourism and Events
+  - Top-Up Level 6 (1 año, £9,535): Accounting, Nursing Practice, Tourism, Business Management, H&SC
+  - Postgrado (1 año): MSc Engineering Management, MSc Fintech, MSc International Business, MSc Nursing, MSc Public Health, MSc Project Management, MBA (£18,000), MSc Tourism
+  - Master's requiere bachelor's 2:2 mínimo
+  - **English Assessment:** Pearson Versant mínimo 54 + entrevista + short written task
+
+  **University of Wales Trinity Saint David (UWTSD)** — London & Birmingham
+  - **Solo Birmingham acepta menores de 21 años** — Londres es solo 21+
+  - Intakes: June, October, February
+  - 2 días/semana en campus (weekday o weekend)
+  - Cursos: CertHE Business Skills / H&SC / Computing Skills, BA Business Management (weekend), BSc Health & Social Care, BSc Applied Computing, BA Leadership & Management, MBA International Business, MSc Public Health, MSc Data & AI, DBA
+  - Postgrado: bachelor 2:2 mínimo O 5 años de experiencia managerial senior (con cartas de empleadores)
+  - Si la titulación es UK: no assessment; si es extranjera: assessment en campus
+  - Clases de preparación: martes y jueves a las 11:00
+
+  **London Metropolitan University (LMU)** — Holloway, Aldgate
+  - 3 días/semana (ruta con titulación solamente)
+  - Documentos: pasaporte, share code, Personal Statement 500+ palabras, proof of address (6 meses)
+  - CV detallado en Word (mínimo 5 bullets por rol, fechas DD/MM/YYYY)
+  - English: certificado O test interno online (English & Maths) según curso
+
+  **Middlesex University** — Hendon
+  - Mismos documentos y formato CV que LMU
+  - English: certificado O Pearson Versant con nota mínima según curso
+
+  **London Professional College (LPC)**
+  - ⚠️ **IMPORTANTE: Student Finance England solo cubre tuition fee — NO maintenance loan**
+  - Cursos Level 3: OTHM Business Studies, Social Media for E-Commerce, Access to Education Nursing
+  - Documentos especiales: National Insurance Number, share code que empiece con "S" (no "W")
+  - Proceso: Online interview + screening + reading/writing test + BKSB assessments de English y Maths
 
   ## Tu rol en las conversaciones — FLUJO OBLIGATORIO
 
