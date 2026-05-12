@@ -248,6 +248,20 @@ async def _procesar_buffer(telefono: str):
             historial,
             imagen_url=imagen_url,
         )
+        # Log de la respuesta CRUDA antes de procesar (para diagnostico de booking)
+        respuesta_cruda = respuesta
+        logger.info(f"RESPUESTA CRUDA de Sofía ({len(respuesta_cruda)} chars): {respuesta_cruda!r}")
+
+        # Detección "fantasma": Sofía dijo "cita confirmada" en la respuesta CRUDA pero NO emitió bloque
+        frases_confirmacion = ["cita confirmada", "cita agendada", "confirmada para el"]
+        dijo_confirmacion = any(frase in respuesta_cruda.lower() for frase in frases_confirmacion)
+        emitio_bloque = "[BOOKING" in respuesta_cruda.upper()
+        if dijo_confirmacion and not emitio_bloque:
+            logger.critical(
+                f"⚠️ ALERTA FANTASMA — Sofía dijo 'cita confirmada' pero NO emitió [BOOKING:...] para {telefono}. "
+                f"Respuesta cruda: {respuesta_cruda!r}"
+            )
+
         respuesta = await _extraer_y_notificar_booking(respuesta, telefono)
         respuesta = await _extraer_y_pausar(respuesta, telefono)
 

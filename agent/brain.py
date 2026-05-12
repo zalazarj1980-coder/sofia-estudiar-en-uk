@@ -6,6 +6,8 @@ import base64
 import yaml
 import logging
 import httpx
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 
@@ -86,6 +88,20 @@ async def generar_respuesta(
         mensaje = ""  # Imagen sin caption — Claude analizará solo la imagen
 
     system_prompt = cargar_system_prompt()
+
+    # Inyectar fecha actual en horario Londres (para resolver "jueves", "mañana", etc.)
+    try:
+        ahora_londres = datetime.now(ZoneInfo("Europe/London"))
+        dias_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+        dia_semana = dias_es[ahora_londres.weekday()]
+        fecha_str = ahora_londres.strftime("%Y-%m-%d")
+        system_prompt += (
+            f"\n\n## Contexto temporal\n"
+            f"Hoy es {dia_semana}, {fecha_str} (hora Londres). "
+            f"Usa esto para resolver fechas relativas como 'jueves', 'mañana', 'la semana que viene', etc."
+        )
+    except Exception as e:
+        logger.warning(f"No se pudo inyectar fecha: {e}")
 
     # Inyectar instrucción según avance de la conversación
     num_mensajes_usuario = sum(1 for m in historial if m["role"] == "user") + 1
