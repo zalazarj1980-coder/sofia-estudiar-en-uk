@@ -116,8 +116,9 @@ async def _extraer_y_notificar_booking(respuesta: str, telefono_cliente: str) ->
 
 async def _extraer_y_pausar(respuesta: str, telefono_cliente: str) -> str:
     """
-    Busca [PAUSA:razón] en la respuesta, lo elimina del texto que ve el usuario
-    y pausa la conversación.
+    Busca [PAUSA:razón] en la respuesta, lo elimina del texto que ve el usuario,
+    pausa la conversación localmente y agrega el tag 'agente_pausado' en GHL
+    para que quede visible en el CRM.
     """
     match = _PATRON_PAUSA.search(respuesta)
     if not match:
@@ -127,6 +128,15 @@ async def _extraer_y_pausar(respuesta: str, telefono_cliente: str) -> str:
         razon = match.group(1)
         await pausar_conversacion(telefono_cliente, razon)
         logger.info(f"Conversación pausada para {telefono_cliente} — razón: {razon}")
+
+        # Sincronizar con GHL: agregar tag 'agente_pausado' para que sea visible en el CRM
+        try:
+            await proveedor.agregar_tag(telefono_cliente, "agente_pausado")
+        except AttributeError:
+            logger.debug("El proveedor no soporta agregar_tag — saltando sincronización GHL")
+        except Exception as e:
+            logger.error(f"Error agregando tag agente_pausado en GHL: {e}")
+
     except Exception as e:
         logger.error(f"Error pausando conversación: {e}")
 

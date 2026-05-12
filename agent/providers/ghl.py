@@ -268,6 +268,39 @@ class ProveedorGHL(ProveedorWhatsApp):
             logger.error(f"Excepción al actualizar custom field GHL: {e}")
             return False
 
+    async def agregar_tag(self, telefono: str, tag: str) -> bool:
+        """
+        Agrega un tag a un contacto en GHL.
+        Usa el contact_id del cache; si no está, lo busca via API.
+        """
+        contact_id = self._contact_cache.get(telefono)
+        if not contact_id:
+            contact_id = await self._buscar_contacto(telefono)
+
+        if not contact_id:
+            logger.warning(f"No hay contact_id para {telefono} — no se puede agregar tag '{tag}'")
+            return False
+
+        if not self.api_key:
+            logger.warning("GHL_API_KEY no configurado — no se puede agregar tag")
+            return False
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.post(
+                    f"{GHL_API_BASE}/contacts/{contact_id}/tags",
+                    headers=self._headers(),
+                    json={"tags": [tag]},
+                )
+                if r.status_code not in (200, 201):
+                    logger.error(f"Error agregando tag GHL: {r.status_code} — {r.text}")
+                    return False
+                logger.info(f"Tag '{tag}' agregado en GHL al contacto {contact_id} ({telefono})")
+                return True
+        except Exception as e:
+            logger.error(f"Excepción al agregar tag GHL: {e}")
+            return False
+
     def _extraer_imagen_url(self, mensaje_obj: dict, body: dict) -> str | None:
         """
         Detecta si el mensaje contiene una imagen y retorna su URL.
