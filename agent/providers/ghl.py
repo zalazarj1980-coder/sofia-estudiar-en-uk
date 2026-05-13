@@ -228,6 +228,10 @@ class ProveedorGHL(ProveedorWhatsApp):
         """
         Actualiza un custom field de un contacto en GHL.
         Usa el contact_id del cache si está disponible.
+
+        IMPORTANTE: La API v2 de GHL espera el key SIN prefijo 'contact.'.
+        Si llega con prefijo, lo strippea automáticamente. Si el PUT con `key` falla
+        en actualizar (silent fail), intenta resolver el field ID y reintentar.
         """
         contact_id = self._contact_cache.get(telefono)
 
@@ -239,13 +243,18 @@ class ProveedorGHL(ProveedorWhatsApp):
             logger.warning("GHL_API_KEY o GHL_LOCATION_ID no configurados")
             return False
 
+        # Strippear prefijo 'contact.' si viene (GHL API no lo acepta en body)
+        key_limpia = nombre_campo
+        if key_limpia.startswith("contact."):
+            key_limpia = key_limpia[len("contact."):]
+
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # GHL API v2 requiere el formato customFields (plural, array)
+                # Intento 1: enviar como `key` (string slug)
                 payload = {
                     "customFields": [
                         {
-                            "key": nombre_campo,
+                            "key": key_limpia,
                             "field_value": valor,
                         }
                     ]
@@ -259,14 +268,95 @@ class ProveedorGHL(ProveedorWhatsApp):
 
                 if r.status_code not in (200, 201, 204):
                     logger.error(f"Error actualizando custom field en GHL: {r.status_code} — {r.text}")
-                    # Intentar con el formato alternativo por ID si el key falla
                     return False
 
-                logger.info(f"Custom field '{nombre_campo}' = '{valor}' actualizado en GHL para {telefono}")
-                return True
+                # Verificar si REALMENTE se actualizó (GHL puede retornar 200 sin actualizar)
+                if await self._verificar_custom_field(contact_id, key_limpia, valor):
+                    logger.info(f"Custom field '{key_limpia}' = '{valor}' verificado en GHL para {telefono}")
+                    return True
+
+                # Si no se actualizó con key como slug, intentar con field ID
+                logger.warning(f"Custom field '{key_limpia}' no se actualizó con key slug — intentando con ID")
+                field_id = await self._obtener_field_id(key_limpia)
+                if not field_id:
+                    logger.error(f"No se pudo obtener field ID para '{key_limpia}' — campo no actualizado")
+                    return False
+
+                payload_id = {
+                    "customFields": [
+                        {
+                            "id": field_id,
+                            "field_value": valor,
+                        }
+                    ]
+                }
+                r2 = await client.put(
+                    f"{GHL_API_BASE}/contacts/{contact_id}",
+                    headers=self._headers(),
+                    json=payload_id,
+                )
+                if r2.status_code not in (200, 201, 204):
+                    logger.error(f"Error con field ID: {r2.status_code} — {r2.text}")
+                    return False
+
+                if await self._verificar_custom_field(contact_id, key_limpia, valor):
+                    logger.info(f"Custom field '{key_limpia}' actualizado vía field ID '{field_id}' para {telefono}")
+                    return True
+
+                logger.error(f"Custom field '{key_limpia}' NO se actualizó ni con key ni con ID")
+                return False
+
         except Exception as e:
             logger.error(f"Excepción al actualizar custom field GHL: {e}")
             return False
+
+    async def _verificar_custom_field(self, contact_id: str, key: str, valor_esperado: str) -> bool:
+        """Lee el contacto y verifica si el custom field tiene el valor esperado."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{GHL_API_BASE}/contacts/{contact_id}",
+                    headers=self._headers(),
+                )
+                if r.status_code != 200:
+                    return False
+                data = r.json().get("contact", {})
+                for cf in data.get("customFields", []):
+                    cf_key = cf.get("key", "")
+                    cf_val = str(cf.get("field_value") or cf.get("value") or "")
+                    if cf_key == key or cf_key == f"contact.{key}":
+                        return cf_val == str(valor_esperado)
+                return False
+        except Exception as e:
+            logger.debug(f"Error verificando custom field: {e}")
+            return False
+
+    async def _obtener_field_id(self, key: str) -> str | None:
+        """Obtiene el ID de un custom field por su key/slug desde la location."""
+        if not self.location_id:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{GHL_API_BASE}/locations/{self.location_id}/customFields",
+                    headers=self._headers(),
+                )
+                if r.status_code != 200:
+                    logger.error(f"Error listando custom fields: {r.status_code} — {r.text}")
+                    return None
+                fields = r.json().get("customFields", [])
+                for f in fields:
+                    f_key = f.get("fieldKey", "") or f.get("key", "")
+                    # GHL puede prefijar "contact." en la respuesta
+                    if f_key == key or f_key == f"contact.{key}":
+                        field_id = f.get("id")
+                        logger.info(f"Field ID resuelto para '{key}': {field_id}")
+                        return field_id
+                logger.warning(f"No se encontró field ID para '{key}' en {len(fields)} campos disponibles")
+                return None
+        except Exception as e:
+            logger.error(f"Excepción obteniendo field ID: {e}")
+            return None
 
     async def agregar_tag(self, telefono: str, tag: str) -> bool:
         """
