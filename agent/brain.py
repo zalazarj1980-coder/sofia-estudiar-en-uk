@@ -6,15 +6,37 @@ import base64
 import yaml
 import logging
 import httpx
+from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from anthropic import AsyncAnthropic
-from dotenv import load_dotenv
 
-load_dotenv()
 logger = logging.getLogger("agentkit")
 
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+def _cargar_env_variables():
+    """Carga variables de .env directamente (workaround para python-dotenv)."""
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.exists():
+        logger.error(f"Archivo .env no encontrado: {env_path}")
+        return None
+
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, value = line.split("=", 1)
+                os.environ[key.strip()] = value.strip()
+
+    return os.getenv("ANTHROPIC_API_KEY")
+
+
+api_key = _cargar_env_variables()
+if not api_key:
+    logger.error("ANTHROPIC_API_KEY no se pudo cargar desde .env")
+client = AsyncAnthropic(api_key=api_key)
 
 
 def cargar_config_prompts() -> dict:

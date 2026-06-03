@@ -2,6 +2,7 @@
 # Generado por AgentKit
 
 import os
+import json
 import logging
 import httpx
 from fastapi import Request
@@ -59,6 +60,7 @@ class ProveedorGHL(ProveedorWhatsApp):
             return []
 
         logger.info(f"Webhook GHL recibido — keys: {list(body.keys())}")
+        logger.debug(f"PAYLOAD COMPLETO JSON:\n{json.dumps(body, indent=2, ensure_ascii=False, default=str)}")
 
         # Extraer contact_id del payload estándar de GHL (siempre presente)
         contact_id = str(body.get("contact_id") or body.get("contactId") or "")
@@ -75,11 +77,38 @@ class ProveedorGHL(ProveedorWhatsApp):
         if imagen_url:
             logger.info(f"Imagen detectada en mensaje: {imagen_url[:80]}...")
 
-        # El teléfono viene en body["phone"]
-        telefono_raw = body.get("phone") or body.get("contactPhone") or ""
+        # El teléfono puede venir en varios lugares según el tipo de webhook
+        contact = body.get("contact") if isinstance(body.get("contact"), dict) else {}
+        customer = body.get("customer") if isinstance(body.get("customer"), dict) else {}
+        custom_data = body.get("customData") if isinstance(body.get("customData"), dict) else {}
+
+        # Buscar el teléfono en múltiples ubicaciones y con múltiples nombres de campo
+        telefono_raw = (
+            body.get("phone")
+            or body.get("contactPhone")
+            or body.get("contact_phone")
+            or body.get("phoneNumber")
+            or body.get("phone_number")
+            or contact.get("phone")
+            or contact.get("phoneNumber")
+            or contact.get("phone_number")
+            or customer.get("phone")
+            or customer.get("phoneNumber")
+            or custom_data.get("phone")
+            or custom_data.get("phoneNumber")
+            or ""
+        )
         telefono = self._extraer_telefono(telefono_raw)
 
         mensaje_id = str(body.get("messageId") or body.get("id") or "")
+
+        # Si no encontramos el teléfono en el payload pero tenemos contact_id,
+        # buscarlo via la API de GHL (el payload real de GHL no siempre incluye phone)
+        if not telefono and contact_id:
+            logger.info(f"Teléfono no en payload — resolviendo via API para contact_id={contact_id}")
+            telefono = await self._obtener_telefono_por_contact_id(contact_id)
+            if telefono:
+                logger.info(f"Teléfono resuelto via API: {telefono}")
 
         # Cachear contact_id para usarlo al enviar (evita búsqueda via API)
         if contact_id and telefono:
@@ -175,6 +204,28 @@ class ProveedorGHL(ProveedorWhatsApp):
 
             logger.error(f"No se pudo obtener contacto GHL para {telefono}: {r.status_code}")
             return None
+
+    async def _obtener_telefono_por_contact_id(self, contact_id: str) -> str:
+        """Consulta la API de GHL para obtener el teléfono de un contacto por su ID."""
+        if not self.api_key or not contact_id:
+            return ""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"{GHL_API_BASE}/contacts/{contact_id}",
+                    headers=self._headers(),
+                )
+                if r.status_code == 200:
+                    data = r.json().get("contact", {})
+                    phone_raw = data.get("phone") or data.get("phoneNumber") or ""
+                    if phone_raw:
+                        return self._normalizar_telefono(str(phone_raw))
+                    logger.warning(f"Contacto {contact_id} no tiene teléfono en GHL")
+                else:
+                    logger.error(f"Error obteniendo contacto {contact_id}: {r.status_code} — {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"Excepción resolviendo teléfono para {contact_id}: {e}")
+        return ""
 
     async def _obtener_o_crear_conversacion(self, contact_id: str) -> str | None:
         """Obtiene o crea la conversación de WhatsApp para un contacto."""

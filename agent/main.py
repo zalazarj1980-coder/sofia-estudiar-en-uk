@@ -6,19 +6,18 @@ import re
 import json
 import asyncio
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
-from dotenv import load_dotenv
 
+# brain.py carga .env al importarse
 from agent.brain import generar_respuesta
 from agent.memory import (
     inicializar_db, guardar_mensaje, obtener_historial,
     pausar_conversacion, reanudar_conversacion, conversacion_esta_pausada
 )
 from agent.providers import obtener_proveedor
-
-load_dotenv()
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 log_level = logging.DEBUG if ENVIRONMENT == "development" else logging.INFO
