@@ -2,6 +2,7 @@
 # Generado por AgentKit
 
 import os
+import asyncio
 import base64
 import yaml
 import logging
@@ -36,7 +37,42 @@ def _cargar_env_variables():
 api_key = _cargar_env_variables()
 if not api_key:
     logger.error("ANTHROPIC_API_KEY no se pudo cargar desde .env")
-client = AsyncAnthropic(api_key=api_key)
+
+# Railway puede tardar más que un entorno local en establecer o mantener la conexión.
+# Se configuran explícitamente para que el comportamiento sea predecible y configurable.
+CLAUDE_TIMEOUT_SECONDS = float(os.getenv("CLAUDE_TIMEOUT_SECONDS", "120"))
+CLAUDE_MAX_RETRIES = int(os.getenv("CLAUDE_MAX_RETRIES", "3"))
+client = AsyncAnthropic(
+    api_key=api_key,
+    timeout=CLAUDE_TIMEOUT_SECONDS,
+    max_retries=0,  # Los reintentos se gestionan abajo para registrar cada intento.
+)
+
+
+async def _crear_mensaje_con_reintentos(**kwargs):
+    """Llama a Claude con reintentos controlados y trazas completas al fallar."""
+    ultimo_error = None
+
+    for intento in range(1, CLAUDE_MAX_RETRIES + 1):
+        try:
+            return await client.messages.create(**kwargs)
+        except Exception as error:
+            ultimo_error = error
+            logger.exception(
+                "Intento %s/%s de Claude API falló (timeout=%ss)",
+                intento,
+                CLAUDE_MAX_RETRIES,
+                CLAUDE_TIMEOUT_SECONDS,
+            )
+
+            if intento == CLAUDE_MAX_RETRIES:
+                raise
+
+            espera = min(2 ** (intento - 1), 8)
+            logger.warning("Reintentando Claude API en %s segundos", espera)
+            await asyncio.sleep(espera)
+
+    raise ultimo_error  # Salvaguarda para el analizador de tipos.
 
 
 def cargar_config_prompts() -> dict:
@@ -179,17 +215,18 @@ async def generar_respuesta(
     })
 
     try:
-        response = await client.messages.create(
+        response = await _crear_mensaje_con_reintentos(
             model="claude-sonnet-4-6",
             max_tokens=1024,
             system=system_prompt,
-            messages=mensajes
+            messages=mensajes,
         )
 
         respuesta = response.content[0].text
         logger.info(f"Respuesta generada ({response.usage.input_tokens} in / {response.usage.output_tokens} out)")
         return respuesta
 
-    except Exception as e:
-        logger.error(f"Error Claude API: {e}")
+    except Exception:
+        # exception() conserva el traceback y el tipo real del error en Railway.
+        logger.exception("Error Claude API tras agotar los reintentos")
         return obtener_mensaje_error()
