@@ -268,8 +268,9 @@ async def _procesar_buffer(telefono: str):
         await guardar_mensaje(telefono, "assistant", respuesta)
         await proveedor.enviar_mensaje(telefono, respuesta)
         logger.info(f"Respuesta enviada a {telefono}")
-    except Exception as e:
-        logger.error(f"Error procesando mensaje de {telefono}: {e}")
+    except Exception:
+        # Incluye el traceback completo (por ejemplo, timeout al enviar a GHL).
+        logger.exception(f"Error procesando mensaje de {telefono}")
 
 
 async def _encolar_mensaje(telefono: str, texto: str, mensaje_id: str, imagen_url: str | None = None):
