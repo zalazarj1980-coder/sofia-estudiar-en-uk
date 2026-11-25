@@ -2,6 +2,11 @@
 # Generado por AgentKit
 
 import os
+import asyncio
+import re
+from datetime import datetime, time, timedelta, timezone
+from weakref import WeakValueDictionary
+from agent.booking import LONDON
 import json
 import logging
 import httpx
@@ -14,6 +19,17 @@ GHL_API_BASE = "https://services.leadconnectorhq.com"
 GHL_API_VERSION = "2021-04-15"
 
 
+def _matches_slot(value, requested: datetime) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        slot = datetime.fromisoformat(value)
+        return (slot.utcoffset() is not None
+                and slot.astimezone(timezone.utc) == requested.astimezone(timezone.utc))
+    except ValueError:
+        return False
+
+
 class ProveedorGHL(ProveedorWhatsApp):
     """Proveedor de WhatsApp usando GoHighLevel API v2."""
 
@@ -22,6 +38,7 @@ class ProveedorGHL(ProveedorWhatsApp):
         self.location_id = os.getenv("GHL_LOCATION_ID")
         # Cache: teléfono → contact_id (GHL lo envía en el webhook)
         self._contact_cache: dict[str, str] = {}
+        self._booking_locks = WeakValueDictionary()
 
     def _headers(self) -> dict:
         return {
@@ -274,6 +291,103 @@ class ProveedorGHL(ProveedorWhatsApp):
                 return False
             logger.info(f"Mensaje enviado correctamente via GHL")
             return True
+
+    async def solicitar_cita_sofia(self, telefono: str, requested: datetime) -> str:
+        """Record a request only; HighLevel must own, verify, and announce bookings."""
+        if os.getenv("SOFIA_CHAT_BOOKING_ENABLED", "").strip().lower() != "true":
+            return "disabled"
+        if not self.api_key or not self.location_id or requested.utcoffset() is None:
+            return "unavailable"
+        calendar, date_id, time_id, trigger_id = (
+            os.getenv(name, "").strip() for name in (
+                "SOFIA_BOOKING_CALENDAR_ID", "SOFIA_BOOKING_DATE_FIELD_ID",
+                "SOFIA_BOOKING_TIME_FIELD_ID", "SOFIA_BOOKING_TRIGGER_FIELD_ID",
+            )
+        )
+        member = os.getenv("SOFIA_BOOKING_CALENDAR_USER_ID", "").strip()
+        ids = (calendar, date_id, time_id, trigger_id)
+        if not all(re.fullmatch(r"[A-Za-z0-9_-]+", v) for v in ids):
+            logger.warning("Sofia chat booking missing calendar/field IDs")
+            return "unavailable"
+        if len({date_id, time_id, trigger_id}) != 3:
+            return "unavailable"
+        contact_id = self._contact_cache.get(telefono)
+        if not contact_id or not re.fullmatch(r"[A-Za-z0-9_-]+", contact_id):
+            return "unavailable"
+
+        requested = requested.astimezone(LONDON)
+        day, hour = requested.date().isoformat(), requested.strftime("%H:%M")
+        contact_url = f"{GHL_API_BASE}/contacts/{contact_id}"
+        lock = self._booking_locks.setdefault(contact_id, asyncio.Lock())
+        trigger_attempted = False
+        try:
+            async with asyncio.timeout(15), lock, httpx.AsyncClient(timeout=5.0) as client:
+                async def read_fields():
+                    result = await client.get(contact_url, headers=self._headers())
+                    result.raise_for_status()
+                    contact = result.json()["contact"]
+                    # The webhook cache alone is not sufficient to identify this contact.
+                    if (contact.get("id") != contact_id
+                            or contact.get("locationId") != self.location_id
+                            or self._extraer_telefono(contact.get("phone")) != telefono):
+                        raise ValueError("contact and webhook do not match")
+                    return {cf.get("id"): cf.get("value", cf.get("field_value"))
+                            for cf in contact.get("customFields", [])}
+
+                async def write_fields(values):
+                    payload = {"customFields": [{"id": ident, "field_value": value}
+                                                for ident, value in values.items()]}
+                    result = await client.put(contact_url, headers=self._headers(), json=payload)
+                    result.raise_for_status()
+
+                before = await read_fields()
+                trigger = str(before.get(trigger_id, "") or "").strip().lower()
+                if trigger == "true":
+                    if before.get(date_id) == day and before.get(time_id) == hour:
+                        return "pending"
+                    return "other_pending"
+                if trigger not in ("", "false"):
+                    return "uncertain"
+                if requested <= datetime.now(timezone.utc):
+                    return "unavailable"
+
+                midnight = datetime.combine(requested.date(), time.min, tzinfo=LONDON)
+                next_midnight = datetime.combine(requested.date() + timedelta(days=1), time.min, tzinfo=LONDON)
+                params = {"startDate": int(midnight.timestamp() * 1000),
+                          "endDate": int(next_midnight.timestamp() * 1000),
+                          "timezone": "Europe/London"}
+                if member:
+                    params["userId"] = member
+                calendar_headers = {**self._headers(),
+                                    "Version": os.getenv("SOFIA_BOOKING_CALENDAR_API_VERSION", "v3")}
+                result = await client.get(f"{GHL_API_BASE}/calendars/{calendar}/free-slots",
+                                          headers=calendar_headers, params=params)
+                result.raise_for_status()
+                slots = result.json().get(day, {}).get("slots", [])
+                if not isinstance(slots, list) or not any(
+                    _matches_slot(slot, requested) for slot in slots
+                ):
+                    return "unavailable"
+
+                await write_fields({date_id: day, time_id: hour})
+                after = await read_fields()
+                if after.get(date_id) != day or after.get(time_id) != hour:
+                    return "unavailable"
+                if str(after.get(trigger_id, "") or "").strip().lower() not in ("", "false"):
+                    return "other_pending"
+                trigger_attempted = True
+                await write_fields({trigger_id: "true"})
+                # A workflow may already have cleared the flag. A write is never proof
+                # of a reservation, and if readback is uncertain we never auto-retry.
+                final = await read_fields()
+                if (str(final.get(trigger_id, "")).strip().lower() != "true"
+                        or final.get(date_id) != day or final.get(time_id) != hour):
+                    return "uncertain"
+                return "queued"
+        except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            # Never log bodies, secrets, or contact details.
+            logger.warning("Sofia chat booking could not be verified: %s", type(exc).__name__)
+            return "uncertain" if trigger_attempted else "unavailable"
 
     async def actualizar_custom_field(self, telefono: str, nombre_campo: str, valor: str) -> bool:
         """

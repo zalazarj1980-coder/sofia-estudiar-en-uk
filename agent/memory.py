@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime, select, Integer, delete
+from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -104,7 +105,15 @@ async def pausar_conversacion(telefono: str, razon: str):
     async with async_session() as session:
         pausa = ConversacionPausada(telefono=telefono, razon=razon)
         session.add(pausa)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            existing = await session.execute(
+                select(ConversacionPausada.id).where(ConversacionPausada.telefono == telefono)
+            )
+            if existing.scalar_one_or_none() is None:
+                raise
 
 
 async def reanudar_conversacion(telefono: str):
